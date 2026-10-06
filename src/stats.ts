@@ -40,6 +40,14 @@ import {
   discoverOmpSessionFiles,
   parsePiSessionFile,
 } from './pi-session-parser.js';
+import {
+  discoverDevinSessionFiles,
+  parseDevinSessionFile,
+} from './devin-session-parser.js';
+import {
+  discoverPerplexitySessionFiles,
+  parsePerplexitySessionFile,
+} from './perplexity-session-parser.js';
 import { readSessionCwd } from './standup.js';
 
 export interface StatsOptions {
@@ -525,7 +533,7 @@ export function stats(opts: StatsOptions = {}): StatsResult {
   const now = opts.now ?? Date.now();
   const cutoff = now - sinceMs;
   const sources: Set<SourceType> = new Set(
-    opts.sources ?? ['claude-code', 'codex', 'opencode', 'cursor', 'pi', 'omp']
+    opts.sources ?? ['claude-code', 'codex', 'opencode', 'cursor', 'pi', 'omp', 'devin', 'perplexity']
   );
 
   // Discover globally; a cwd filter applies after parse, since the JSONL's cwd
@@ -539,6 +547,8 @@ export function stats(opts: StatsOptions = {}): StatsResult {
   if (sources.has('cursor')) candidates.push(...discoverCursorSessionFiles());
   if (sources.has('pi')) candidates.push(...discoverPiSessionFiles());
   if (sources.has('omp')) candidates.push(...discoverOmpSessionFiles());
+  if (sources.has('devin')) candidates.push(...discoverDevinSessionFiles());
+  if (sources.has('perplexity')) candidates.push(...discoverPerplexitySessionFiles());
   candidates.sort((a, b) => b.modifiedTime.getTime() - a.modifiedTime.getTime());
 
   const stamps: MessageStamp[] = [];
@@ -567,6 +577,10 @@ export function stats(opts: StatsOptions = {}): StatsResult {
           ? parseCursorSessionFile(f.path)
           : f.sourceType === 'pi' || f.sourceType === 'omp'
           ? parsePiSessionFile(f.path, f.sourceType)
+          : f.sourceType === 'devin'
+          ? parseDevinSessionFile(f.path, f.sessionId)
+          : f.sourceType === 'perplexity'
+          ? parsePerplexitySessionFile(f.path, f.sessionId)
           : parseSessionFile(f.path);
       entry = {
         version: CACHE_VERSION,

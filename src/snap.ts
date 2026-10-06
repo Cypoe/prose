@@ -26,6 +26,10 @@ import {
   discoverOmpSessionFiles,
   parsePiSessionFile,
 } from './pi-session-parser.js';
+import {
+  discoverDevinSessionFiles,
+  parseDevinSessionFile,
+} from './devin-session-parser.js';
 import { listBatons, renderBatonHeader, type Baton } from './baton.js';
 
 export interface SnapOptions {
@@ -205,6 +209,7 @@ export function snap(opts: SnapOptions = {}): SnapResult {
   const cursorFiles = discoverCursorSessionFiles(cwd);
   const piFiles = discoverPiSessionFiles(cwd);
   const ompFiles = discoverOmpSessionFiles(cwd);
+  const devinFiles = discoverDevinSessionFiles(cwd);
   const now = Date.now();
 
   // Parse a wider set of candidates than maxSessions so we can re-sort by
@@ -220,6 +225,7 @@ export function snap(opts: SnapOptions = {}): SnapResult {
     ...cursorFiles.slice(0, perSourceCap),
     ...piFiles.slice(0, perSourceCap),
     ...ompFiles.slice(0, perSourceCap),
+    ...devinFiles.slice(0, perSourceCap),
   ].sort((a, b) => b.modifiedTime.getTime() - a.modifiedTime.getTime());
 
   type Parsed = {
@@ -242,6 +248,8 @@ export function snap(opts: SnapOptions = {}): SnapResult {
         ? parseCursorSessionFile(f.path)
         : f.sourceType === 'pi' || f.sourceType === 'omp'
         ? parsePiSessionFile(f.path, f.sourceType)
+        : f.sourceType === 'devin'
+        ? parseDevinSessionFile(f.path, f.sessionId)
         : parseSessionFile(f.path);
     if (conv.messages.length === 0) continue;
 
@@ -298,6 +306,8 @@ export function snap(opts: SnapOptions = {}): SnapResult {
         ? 'pi'
         : p.file.sourceType === 'omp'
         ? 'OMP'
+        : p.file.sourceType === 'devin'
+        ? 'Devin'
         : 'Claude Code';
 
     // Try the full tail first; if it overflows its fair share, shrink.

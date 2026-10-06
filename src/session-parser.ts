@@ -61,7 +61,7 @@ export interface Conversation {
   sourceType?: SourceType;
 }
 
-export type SourceType = 'claude-code' | 'git' | 'antigravity' | 'codex' | 'opencode' | 'cursor' | 'pi' | 'omp';
+export type SourceType = 'claude-code' | 'git' | 'antigravity' | 'codex' | 'opencode' | 'cursor' | 'pi' | 'omp' | 'devin' | 'perplexity';
 
 export interface SessionFile {
   path: string;

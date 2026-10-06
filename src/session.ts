@@ -37,6 +37,14 @@ import {
   getAntigravityArtifacts,
   parseAntigravityArtifact,
 } from './source-parsers.js';
+import {
+  discoverDevinSessionFiles,
+  parseDevinSessionFile,
+} from './devin-session-parser.js';
+import {
+  discoverPerplexitySessionFiles,
+  parsePerplexitySessionFile,
+} from './perplexity-session-parser.js';
 
 export interface SessionOptions {
   /** Last N messages of the session (default: all). */
@@ -129,6 +137,10 @@ function sourceLabel(t: NonNullable<SessionFile['sourceType']>): string {
       return 'pi';
     case 'omp':
       return 'OMP';
+    case 'devin':
+      return 'Devin';
+    case 'perplexity':
+      return 'Perplexity';
     default:
       return t;
   }
@@ -142,6 +154,8 @@ export function collectAllSessionFiles(): SessionFile[] {
   const cursor = discoverCursorSessionFiles();
   const pi = discoverPiSessionFiles();
   const omp = discoverOmpSessionFiles();
+  const devin = discoverDevinSessionFiles();
+  const perplexity = discoverPerplexitySessionFiles();
 
   const antigravity: SessionFile[] = [];
   try {
@@ -156,7 +170,7 @@ export function collectAllSessionFiles(): SessionFile[] {
     // Ignore errors
   }
 
-  return [...claude, ...codex, ...opencode, ...cursor, ...pi, ...omp, ...antigravity];
+  return [...claude, ...codex, ...opencode, ...cursor, ...pi, ...omp, ...devin, ...perplexity, ...antigravity];
 }
 
 export function parseByType(f: SessionFile): Conversation {
@@ -164,6 +178,8 @@ export function parseByType(f: SessionFile): Conversation {
   if (f.sourceType === 'opencode') return parseOpencodeSessionFile(f.path);
   if (f.sourceType === 'cursor') return parseCursorSessionFile(f.path);
   if (f.sourceType === 'pi' || f.sourceType === 'omp') return parsePiSessionFile(f.path, f.sourceType);
+  if (f.sourceType === 'devin') return parseDevinSessionFile(f.path, f.sessionId);
+  if (f.sourceType === 'perplexity') return parsePerplexitySessionFile(f.path, f.sessionId);
   if (f.sourceType === 'antigravity') {
     const messages = parseAntigravityArtifact(f.path, f.sessionId, f.project);
     const startTime = messages.length ? messages[0].timestamp : f.modifiedTime;

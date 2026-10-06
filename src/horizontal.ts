@@ -11,6 +11,7 @@ import { generateObject } from 'ai';
 import { z } from 'zod';
 
 import type { AllFragments } from './schemas.js';
+import { resolveLlmParams } from './llm.js';
 import {
   DecisionSchema,
   InsightSchema,
@@ -51,9 +52,10 @@ export interface HorizontalEvolutionResult {
 // ============================================================================
 
 function createLLMClient(config: HorizontalEvolutionConfig) {
+  const llm = resolveLlmParams(config);
   return createOpenAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseUrl || 'https://openrouter.ai/api/v1',
+    apiKey: llm.apiKey,
+    baseURL: llm.baseUrl,
     headers: { 'X-Title': 'prose' },
   });
 }
@@ -125,7 +127,7 @@ Sessions prefixed with "INTELLIGENT DESIGN SESSION" are direct human corrections
 Evolve the baseline using these new session fragments. The schema describes what we need.`;
 
   const { object, usage } = await generateObject({
-    model: client(config.model || 'google/gemini-3-flash-preview'),
+    model: client(resolveLlmParams(config).model),
     schema: DecisionSchema,
     prompt,
     temperature: 0.3,
@@ -158,7 +160,7 @@ Sessions prefixed with "INTELLIGENT DESIGN SESSION" are direct human corrections
 Evolve the baseline using these new session fragments. The schema describes what we need.`;
 
   const { object, usage } = await generateObject({
-    model: client(config.model || 'google/gemini-3-flash-preview'),
+    model: client(resolveLlmParams(config).model),
     schema: InsightSchema,
     prompt,
     temperature: 0.3,
@@ -189,7 +191,7 @@ ${formatFragmentsForEvolution(snapshots)}
 The most recent session's focus is likely most relevant, but synthesize if needed to produce the current state.`;
 
   const { object, usage } = await generateObject({
-    model: client(config.model || 'google/gemini-3-flash-preview'),
+    model: client(resolveLlmParams(config).model),
     schema: FocusSchema,
     prompt,
     temperature: 0.3,
@@ -219,7 +221,7 @@ ${formatFragmentsForEvolution(snapshots)}
 Focus on the overall arc, key moments, and memorable quotes. Evolve the existing narrative history with these new beats.`;
 
   const { object, usage } = await generateObject({
-    model: client(config.model || 'google/gemini-3-flash-preview'),
+    model: client(resolveLlmParams(config).model),
     schema: NarrativeSchema,
     prompt,
     temperature: 0.5,

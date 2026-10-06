@@ -10,6 +10,7 @@
 
 import { createOpenAI } from '@ai-sdk/openai';
 import { streamText } from 'ai';
+import { resolveLlmParams } from './llm.js';
 
 import { whisper, type WhisperOptions, type WhisperResult } from './whisper.js';
 import { type NeighborhoodEntry } from './neighborhood.js';
@@ -84,13 +85,14 @@ export async function gossip(opts: GossipOptions): Promise<GossipResult> {
     source.blocks.some((b) => b.member.path === n.path)
   );
 
+  const llm = resolveLlmParams(opts);
   const client = createOpenAI({
-    apiKey: opts.apiKey,
-    baseURL: opts.baseUrl || 'https://openrouter.ai/api/v1',
+    apiKey: llm.apiKey,
+    baseURL: llm.baseUrl,
     headers: { 'X-Title': 'prose' },
   });
 
-  const model = client(opts.model || 'google/gemini-3-flash-preview');
+  const model = client(llm.model);
 
   const result = await streamText({
     model,

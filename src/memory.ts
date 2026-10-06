@@ -63,6 +63,10 @@ export interface GlobalConfig {
   openRouterApiKey?: string;
   /** Generic LLM API key (global fallback) */
   llmApiKey?: string;
+  /** OpenAI-compatible LLM base URL (e.g. http://127.0.0.1:1234/v1) */
+  llmBaseUrl?: string;
+  /** LLM model id (e.g. qwen3.8-9b-heretic-uncensored) */
+  llmModel?: string;
 }
 
 export interface SessionProcessingState {
@@ -318,6 +322,8 @@ export function getGlobalConfig(): GlobalConfig {
     jinaApiKey: saved.jinaApiKey,
     openRouterApiKey: saved.openRouterApiKey,
     llmApiKey: saved.llmApiKey,
+    llmBaseUrl: saved.llmBaseUrl,
+    llmModel: saved.llmModel,
   };
 }
 

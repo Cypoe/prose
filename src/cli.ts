@@ -22,6 +22,7 @@ config({ path: join(homedir(), '.config', 'prose', '.env'), quiet: true });  // 
 import { Command } from 'commander';
 import { discoverSessionFiles, parseSessionFile, parseSessionFileFromOffset, getSessionStats, getClaudeProjectsDir, type Message, type SessionFile } from './session-parser.js';
 import { discoverCodexSessionFiles, parseCodexSessionFile, parseCodexSessionFileFromOffset } from './codex-session-parser.js';
+import { discoverDevinSessionFiles, parseDevinSessionFile } from './devin-session-parser.js';
 import { evolveAllFragments } from './evolve.js';
 import { emptyFragments, type AllFragments } from './schemas.js';
 import {
@@ -56,6 +57,7 @@ import {
   appendChronicleEntry,
   type ChronicleEntry,
 } from './memory.js';
+import { getLlmConfig, hasLlmAccess } from './llm.js';
 import {
   loadChronicleConfig,
   getChronicleConfigPath,
@@ -316,12 +318,12 @@ program
   .option('--no-artifacts', 'Disable per-session artifact export')
   .action(async (options) => {
     const config = getGlobalConfig();
-    const apiKey = options.apiKey || getApiKey('llm');
-    const jinaApiKey = getApiKey('jina');
-    if (!apiKey) {
-      logger.error('No LLM API key found. Set OPENROUTER_API_KEY env var or use "prose config set openrouter-api-key <key>"');
+    if (!hasLlmAccess(options.apiKey)) {
+      logger.error('No LLM access. Set an API key (OPENROUTER_API_KEY / "prose config set openrouter-api-key <key>") or a local endpoint ("prose config set llm-base-url http://127.0.0.1:1234/v1")');
       process.exit(1);
     }
+    const apiKey = options.apiKey || getLlmConfig().apiKey || 'prose-local';
+    const jinaApiKey = getApiKey('jina');
 
     // Resolve artifacts preference (Option > Global Config)
     const shouldMirror = options.artifacts !== undefined ? options.artifacts : config.artifacts;
@@ -343,6 +345,8 @@ program
     const sessions = discoverSessionFiles(projectFilter, process.cwd());
     const codexSessions = discoverCodexSessionFiles(projectFilter);
     sessions.push(...codexSessions);
+    // Devin sessions carry their real cwd in sessions.db — same project filter.
+    sessions.push(...discoverDevinSessionFiles(projectFilter));
 
     // Add Git if requested
     if (options.git) {
@@ -468,6 +472,15 @@ program
         if (messagesToProcess.length > 0) {
           console.log(`📖 Ingesting Antigravity artifact: ${basename(session.path)}...`);
         }
+      } else if (session.sourceType === 'devin') {
+        // The shared sessions.db grows as a whole; byte-offset reads don't
+        // apply, so always full-parse and slice on message count.
+        const devinMessages = parseDevinSessionFile(session.path, session.sessionId).messages;
+        totalMessageCount = devinMessages.length;
+        messagesToProcess = prevState ? devinMessages.slice(prevState.messageCount) : devinMessages;
+        if (messagesToProcess.length > 0) {
+          console.log(`📖 Ingesting Devin session: ${session.sessionId}...`);
+        }
       } else {
         const isCodex = session.sourceType === 'codex';
         const prevFileSize = prevState?.fileSize;
@@ -532,7 +545,7 @@ program
 
       // Write verbatim artifacts FIRST (for all sessions, regardless of new messages)
       // This ensures digital archaeology captures every conversation
-      if (shouldMirror && !['git', 'antigravity', 'design'].includes(session.sourceType as string)) {
+      if (shouldMirror && !['git', 'antigravity', 'design', 'devin', 'perplexity'].includes(session.sourceType as string)) {
         try {
           const fullConversation = session.sourceType === 'codex'
             ? parseCodexSessionFile(session.path)
@@ -882,11 +895,11 @@ program
   .option('--to <project>', 'Target project (defaults to current)')
   .option('--dry-run', 'Show what would be merged without making changes')
   .action(async (options) => {
-    const apiKey = options.apiKey || getApiKey('llm');
-    if (!apiKey) {
-      logger.error('No LLM API key found. Set OPENROUTER_API_KEY env var or use "prose config set openrouter-api-key <key>"');
+    if (!hasLlmAccess(options.apiKey)) {
+      logger.error('No LLM access. Set an API key (OPENROUTER_API_KEY / "prose config set openrouter-api-key <key>") or a local endpoint ("prose config set llm-base-url http://127.0.0.1:1234/v1")');
       process.exit(1);
     }
+    const apiKey = options.apiKey || getLlmConfig().apiKey || 'prose-local';
 
     const index = loadMemoryIndex();
 
@@ -1061,11 +1074,11 @@ program
   .option('-p, --project <path>', 'Filter to specific project path')
   .option('--model <name>', 'Model to use', 'google/gemini-3-flash-preview')
   .action(async (options) => {
-    const apiKey = options.apiKey || getApiKey('llm');
-    if (!apiKey) {
-      logger.error('No LLM API key found. Set OPENROUTER_API_KEY env var or use "prose config set openrouter-api-key <key>"');
+    if (!hasLlmAccess(options.apiKey)) {
+      logger.error('No LLM access. Set an API key (OPENROUTER_API_KEY / "prose config set openrouter-api-key <key>") or a local endpoint ("prose config set llm-base-url http://127.0.0.1:1234/v1")');
       process.exit(1);
     }
+    const apiKey = options.apiKey || getLlmConfig().apiKey || 'prose-local';
 
     let projectFilter = options.project;
     const cwd = process.cwd();
@@ -1766,11 +1779,11 @@ program
   .option('--api-key <key>', 'Override the LLM API key')
   .option('--json', 'Emit JSON with the source whisper + paragraph instead of streaming the paragraph to stdout')
   .action(async (options) => {
-    const apiKey = options.apiKey || getApiKey('llm');
-    if (!apiKey) {
-      logger.error('No LLM API key found. Set OPENROUTER_API_KEY env var or use "prose config set openrouter-api-key <key>"');
+    if (!hasLlmAccess(options.apiKey)) {
+      logger.error('No LLM access. Set an API key (OPENROUTER_API_KEY / "prose config set openrouter-api-key <key>") or a local endpoint ("prose config set llm-base-url http://127.0.0.1:1234/v1")');
       process.exit(1);
     }
+    const apiKey = options.apiKey || getLlmConfig().apiKey || 'prose-local';
 
     // For JSON mode, capture the LLM stream into a buffer instead of stdout
     // so the caller gets a clean structured payload.
@@ -1828,11 +1841,11 @@ program
   .option('--api-key <key>', 'Override the LLM API key')
   .option('--json', 'Emit JSON with metadata + full text instead of streaming to stdout')
   .action(async (options) => {
-    const apiKey = options.apiKey || getApiKey('llm');
-    if (!apiKey) {
-      logger.error('No LLM API key found. Set OPENROUTER_API_KEY env var or use "prose config set openrouter-api-key <key>"');
+    if (!hasLlmAccess(options.apiKey)) {
+      logger.error('No LLM access. Set an API key (OPENROUTER_API_KEY / "prose config set openrouter-api-key <key>") or a local endpoint ("prose config set llm-base-url http://127.0.0.1:1234/v1")');
       process.exit(1);
     }
+    const apiKey = options.apiKey || getLlmConfig().apiKey || 'prose-local';
 
     const { Writable } = await import('stream');
     let captured = '';
@@ -1906,7 +1919,7 @@ program
 
 program
   .command('grep <pattern...>')
-  .description('Regex search across recent agent session text (Claude Code CLI, ACP, Codex, opencode, Cursor, pi, and OMP). Operates on parsed session content — NOT files on disk. Multiple patterns OR-alternate. Output is grep-style with line numbers and ±N context lines.')
+  .description('Regex search across recent agent session text (Claude Code CLI, ACP, Codex, opencode, Cursor, pi, OMP, Devin, and Perplexity). Operates on parsed session content — NOT files on disk. Multiple patterns OR-alternate. Output is grep-style with line numbers and ±N context lines.')
   .option('-C, --context <n>', 'Lines before and after each match (default 5)', (v) => parseInt(v, 10))
   .option('-A, --after <n>', 'Lines after each match (overrides --context for after)', (v) => parseInt(v, 10))
   .option('-B, --before <n>', 'Lines before each match (overrides --context for before)', (v) => parseInt(v, 10))
@@ -1914,7 +1927,7 @@ program
   .option('-F, --fixed-strings', 'Treat patterns as literal strings, not regex')
   .option('-m, --max-matches <n>', 'Cap on total matches across all sessions (default 50)', (v) => parseInt(v, 10))
   .option('--max-sessions <n>', 'Cap on sessions scanned (performance guardrail, default 500)', (v) => parseInt(v, 10))
-  .option('--source <type>', 'Restrict to a source: claude-code | codex | opencode | cursor | pi | omp (repeatable)', (v: string, prev: string[] = []) => [...prev, v])
+  .option('--source <type>', 'Restrict to a source: claude-code | codex | opencode | cursor | pi | omp | devin | perplexity (repeatable)', (v: string, prev: string[] = []) => [...prev, v])
   .option('--cwd <path>', 'Restrict to one cwd (default: all cwds)')
   .option('--since <duration>', 'Time window for inclusion: e.g. 30m, 4h, 1d, 2h30m (default: all time)')
   .option('--include-current', 'Include the actively-written claude-code session')
@@ -1933,7 +1946,7 @@ program
 
     let sources: SourceType[] | undefined;
     if (options.source && Array.isArray(options.source)) {
-      const valid: SourceType[] = ['claude-code', 'codex', 'opencode', 'cursor', 'pi', 'omp'];
+      const valid: SourceType[] = ['claude-code', 'codex', 'opencode', 'cursor', 'pi', 'omp', 'devin', 'perplexity'];
       const bad = options.source.filter((s: string) => !valid.includes(s as SourceType));
       if (bad.length > 0) {
         logger.error(`Unknown --source value(s): ${bad.join(', ')}. Valid: ${valid.join(', ')}.`);
@@ -1985,10 +1998,10 @@ program
 
 program
   .command('stats')
-  .description('Per-day activity metrics across all agent sessions (Claude Code CLI, ACP, Codex, opencode, Cursor, pi, OMP): active hours, message volumes, session/project counts, hour-of-day histogram. Global by default — all cwds. Active time merges message timestamps with an idle-gap cutoff; "human" counts user messages only.')
+  .description('Per-day activity metrics across all agent sessions (Claude Code CLI, ACP, Codex, opencode, Cursor, pi, OMP, Devin, Perplexity): active hours, message volumes, session/project counts, hour-of-day histogram. Global by default — all cwds. Active time merges message timestamps with an idle-gap cutoff; "human" counts user messages only.')
   .option('--since <duration>', 'Time window for inclusion: e.g. 4h, 7d, 2h30m (default 30d)')
   .option('--idle-gap <duration>', 'Gap above which activity splits into separate intervals (default 15m)')
-  .option('--source <type>', 'Restrict to a source: claude-code | codex | opencode | cursor | pi | omp (repeatable)', (v: string, prev: string[] = []) => [...prev, v])
+  .option('--source <type>', 'Restrict to a source: claude-code | codex | opencode | cursor | pi | omp | devin | perplexity (repeatable)', (v: string, prev: string[] = []) => [...prev, v])
   .option('--cwd <path>', 'Restrict to one cwd (default: all cwds)')
   .option('--max-sessions <n>', 'Cap on sessions parsed (performance guardrail, default 2000)', (v) => parseInt(v, 10))
   .option('--include-sdk-cli', 'Include sdk-cli sessions (Claude Code automation)')
@@ -2008,7 +2021,7 @@ program
 
     let sources: SourceType[] | undefined;
     if (options.source && Array.isArray(options.source)) {
-      const valid: SourceType[] = ['claude-code', 'codex', 'opencode', 'cursor', 'pi', 'omp'];
+      const valid: SourceType[] = ['claude-code', 'codex', 'opencode', 'cursor', 'pi', 'omp', 'devin', 'perplexity'];
       const bad = options.source.filter((s: string) => !valid.includes(s as SourceType));
       if (bad.length > 0) {
         logger.error(`Unknown --source value(s): ${bad.join(', ')}. Valid: ${valid.join(', ')}.`);
@@ -2393,9 +2406,15 @@ configCmd
     } else if (key === 'llm-api-key') {
       saveGlobalConfig({ llmApiKey: value as string });
       logger.success(`Set llm-api-key (${(value as string).length} chars)`);
+    } else if (key === 'llm-base-url') {
+      saveGlobalConfig({ llmBaseUrl: value as string });
+      logger.success(`Set llm-base-url to: ${value}`);
+    } else if (key === 'llm-model') {
+      saveGlobalConfig({ llmModel: value as string });
+      logger.success(`Set llm-model to: ${value}`);
     } else {
       logger.error(`Unknown configuration key: ${key}`);
-      logger.info('Valid keys: artifacts, mirror-mode, source-extensions, auto-index-source, vector-threshold, jina-api-key, openrouter-api-key, llm-api-key');
+      logger.info('Valid keys: artifacts, mirror-mode, source-extensions, auto-index-source, vector-threshold, jina-api-key, openrouter-api-key, llm-api-key, llm-base-url, llm-model');
       process.exit(1);
     }
   });
@@ -2419,6 +2438,10 @@ configCmd
     console.log(`     source-extensions: ${config.sourceExtensions?.join(', ') || '(none)'}`);
     console.log(`     auto-index-source: ${config.autoIndexSource}`);
     console.log(`     vector-threshold: ${config.vectorThreshold}`);
+    console.log('\n   LLM Endpoint:');
+    const llm = getLlmConfig();
+    console.log(`     effective base-url: ${llm.baseUrl || 'https://openrouter.ai/api/v1 (default)'}`);
+    console.log(`     effective model: ${llm.model || 'google/gemini-3-flash-preview (default)'}`);
     console.log('\n   API Keys:');
     console.log(`     jina-api-key: ${maskKey(config.jinaApiKey)}`);
     console.log(`     openrouter-api-key: ${maskKey(config.openRouterApiKey)}`);

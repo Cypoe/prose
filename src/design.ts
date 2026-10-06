@@ -1,4 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
+import { resolveLlmParams } from './llm.js';
 import { streamText } from 'ai';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -19,13 +20,14 @@ export async function startDesignSession(
     memory: ProjectMemory,
     config: { apiKey: string; baseUrl?: string; model?: string }
 ): Promise<void> {
+    const llm = resolveLlmParams(config);
     const openai = createOpenAI({
-        apiKey: config.apiKey,
-        baseURL: config.baseUrl || 'https://openrouter.ai/api/v1',
+        apiKey: llm.apiKey,
+        baseURL: llm.baseUrl,
         headers: { 'X-Title': 'prose' },
     });
 
-    const model = openai(config.model || 'google/gemini-3-flash-preview');
+    const model = openai(llm.model);
 
     const rl = readline.createInterface({
         input: process.stdin,

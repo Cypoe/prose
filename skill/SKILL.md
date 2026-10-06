@@ -1,11 +1,11 @@
 ---
 name: prose
-description: ALWAYS CHECK FIRST when you need to orient on recent work or find a specific thing said in a past session. `prose` is a near-stateless CLI that reads agent session journals (Claude Code CLI, ACP, Codex, opencode, Cursor). Five read verbs (`snap`, `whisper`, `grep`, `session`, `stats`) are pure — no LLM; two compaction verbs (`gossip`, `standup`) layer one cheap LLM pass on top; one stateful verb (`baton`) persists "you are here" markers. Don't say "I don't remember" or guess from filenames before running prose. Use `grep` when the user references a specific phrase, term, file, or quote from a past session. Use `session <id>` to drill into a specific session — the ids printed in snap/whisper headers are direct handles. Use `baton set` to leave a sign-off for the next session and `baton` to read the latest. Also fire when the user mentions prose itself ("look at prose", "show me prose", "does prose work", "try prose") — default to `snap`, never dump `--help` and ask what to do.
+description: ALWAYS CHECK FIRST when you need to orient on recent work or find a specific thing said in a past session. `prose` is a near-stateless CLI that reads agent session journals (Claude Code CLI, ACP, Codex, opencode, Cursor, pi, OMP, Devin, Antigravity, Perplexity). Five read verbs (`snap`, `whisper`, `grep`, `session`, `stats`) are pure — no LLM; two compaction verbs (`gossip`, `standup`) layer one cheap LLM pass on top; one stateful verb (`baton`) persists "you are here" markers. Don't say "I don't remember" or guess from filenames before running prose. Use `grep` when the user references a specific phrase, term, file, or quote from a past session. Use `session <id>` to drill into a specific session — the ids printed in snap/whisper headers are direct handles. Use `baton set` to leave a sign-off for the next session and `baton` to read the latest. Also fire when the user mentions prose itself ("look at prose", "show me prose", "does prose work", "try prose") — default to `snap`, never dump `--help` and ask what to do.
 ---
 
 # prose — Stateless Inspection Over Your Agent Journal
 
-`prose` is the cheap orientation tool over your AI session history. It reads what your agents (Claude Code CLI, brain personas via ACP, Codex, opencode, Cursor) have already written to disk. The read verbs are pure read-side — every call is current; no cursors, no caches, no coordination overhead. The one exception is `baton`: a deliberately stateful "you are here" marker you write at a sign-off and read back next session (persisted to the `~/.prose` vault, so it syncs across machines).
+`prose` is the cheap orientation tool over your AI session history. It reads what your agents (Claude Code CLI, brain personas via ACP, Codex, opencode, Cursor, pi, OMP, Devin, Antigravity) have already written to disk. The read verbs are pure read-side — every call is current; no cursors, no caches, no coordination overhead. The one exception is `baton`: a deliberately stateful "you are here" marker you write at a sign-off and read back next session (persisted to the `~/.prose` vault, so it syncs across machines).
 
 **Reach for prose when:**
 
@@ -78,7 +78,7 @@ Read verbs (`snap`, `whisper`, `grep`, `session`, `stats`) are pure — no LLM, 
 **`session <id>`** — Verbatim readout of one specific session, no LLM.
 - The drill-down companion to snap/whisper/grep. When those verbs print `=== Claude Code session 72a5eed3 ===`, pass that prefix (or any unique prefix) to `prose session 72a5eed3` to read the whole session.
 - Accepts any unambiguous id prefix; errors clearly on no-match (exit 1) or ambiguous-match (exit 2 with the candidate list).
-- No cwd filter — the id is the selector. Scans Claude Code, ACP, Codex, opencode, Cursor, and Gemini Antigravity (the widest id-space of any verb).
+- No cwd filter — the id is the selector. Scans Claude Code, ACP, Codex, opencode, Cursor, pi, OMP, Devin, Perplexity, and Gemini Antigravity (the widest id-space of any verb).
 - Knobs: `--turns N` to tail, `--since <iso>` to slice by timestamp, `--max-message-bytes N` (default 0, no clipping — opposite of snap, since named-session means you want the full text).
 - Cheap: filesystem read, zero token spend.
 
@@ -102,10 +102,14 @@ Have an id from snap/whisper/grep?         → prose session <id>
 - Codex CLI sessions in `~/.codex/sessions/`
 - opencode (sst/opencode) sessions in `~/.local/share/opencode/opencode.db` (SQLite)
 - Cursor agent transcripts in `~/.cursor/projects/<cwd>/agent-transcripts/` (JSONL; timestamps synthesized from file mtime, since Cursor records none)
+- Devin CLI/Desktop sessions in `<appData>/Devin/cli/sessions.db` (SQLite; replayed chain nodes are deduped by message_id)
+- Perplexity "personal computer" app sessions in `~/.pplx/users/*/local.db` (SQLCipher v4; key read at runtime from Windows Credential Manager, decrypted pages merged with the WAL into a temp plaintext image — nothing is written back or logged)
 
-`session <id>` resolves against that same union **plus** Gemini Antigravity brain artifacts in `~/.gemini/antigravity/brain/` — its id-space is the widest of any verb, so a named id always resolves regardless of source.
+`session <id>` resolves against that same union **plus** Gemini Antigravity brain artifacts in `~/.gemini/antigravity/brain/` (transcript.jsonl, `.db` trajectory stores, and legacy `.pb` dumps in `~/.gemini/antigravity/conversations/`) — its id-space is the widest of any verb, so a named id always resolves regardless of source.
 
-A `gossip` in a directory automatically picks up what your terminal CLI, ACP-driven brain personas, Codex, opencode, and Cursor have all been doing there. The boundary between surfaces mostly disappears at the inspection layer. Sources you don't use are silently no-ops — no config to disable.
+A `gossip` in a directory automatically picks up what your terminal CLI, ACP-driven brain personas, Codex, opencode, Cursor, and Devin have all been doing there. The boundary between surfaces mostly disappears at the inspection layer. Sources you don't use are silently no-ops — no config to disable.
+
+**LLM endpoint:** the compaction verbs (`gossip`, `standup`) resolve their endpoint via `PROSE_LLM_BASE_URL`/`PROSE_LLM_MODEL` env > `prose config set llm-base-url`/`llm-model` > the Perplexity app's local inference endpoint (e.g. an LM Studio server at `http://127.0.0.1:1234/v1`) > OpenRouter default. A custom base URL needs no API key — local servers ignore the bearer token. `prose config show` prints the effective endpoint.
 
 ## Stateless — call it freely
 
@@ -163,7 +167,7 @@ prose stats --json                        # full structure: days, totals, histog
 - **Reaching for `gossip` when you wanted raw text.** Gossip costs LLM tokens for a paragraph. If you're going to feed the result into your own reasoning, use `whisper` and skip the middle compression.
 - **Running `whisper --cwd-only` when the project is part of a family.** Default whisper is the right call ~80% of the time. Use `--cwd-only` only when you genuinely want to ignore siblings.
 - **Reaching for `whisper`/`snap` when the user named a specific term or quote.** If they reference a phrase ("the bit about the vision board," "where I said `tsc --noEmit` was clean"), that's `grep` — recency-based verbs only see the tail. `grep` searches the whole archive.
-- **Treating `prose grep` as a filesystem search.** It's not. It searches the **parsed session content** (Claude Code JSONLs, ACP records, Codex sessions, opencode SQLite). Use ripgrep for files on disk; use `prose grep` for words your agents actually said.
+- **Treating `prose grep` as a filesystem search.** It's not. It searches the **parsed session content** (Claude Code JSONLs, ACP records, Codex sessions, opencode SQLite, Devin sessions.db, Perplexity local stores). Use ripgrep for files on disk; use `prose grep` for words your agents actually said.
 
 ## Pairing with other skills
 

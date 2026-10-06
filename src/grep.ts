@@ -33,6 +33,14 @@ import {
   discoverOmpSessionFiles,
   parsePiSessionFile,
 } from './pi-session-parser.js';
+import {
+  discoverDevinSessionFiles,
+  parseDevinSessionFile,
+} from './devin-session-parser.js';
+import {
+  discoverPerplexitySessionFiles,
+  parsePerplexitySessionFile,
+} from './perplexity-session-parser.js';
 import { readSessionCwd } from './standup.js';
 
 export interface GrepOptions {
@@ -271,6 +279,10 @@ function sourceLabelOf(t: SourceType): string {
       return 'Cursor';
     case 'omp':
       return 'OMP';
+    case 'devin':
+      return 'Devin';
+    case 'perplexity':
+      return 'Perplexity';
     default:
       return t;
   }
@@ -287,7 +299,7 @@ export function grep(opts: GrepOptions): GrepResult {
   const includeCurrent = opts.includeCurrent ?? false;
   const includeSdkCli = opts.includeSdkCli ?? false;
   const sources: Set<SourceType> = new Set(
-    opts.sources ?? ['claude-code', 'codex', 'opencode', 'cursor', 'pi', 'omp']
+    opts.sources ?? ['claude-code', 'codex', 'opencode', 'cursor', 'pi', 'omp', 'devin', 'perplexity']
   );
 
   const now = Date.now();
@@ -303,6 +315,8 @@ export function grep(opts: GrepOptions): GrepResult {
   if (sources.has('cursor')) candidates.push(...discoverCursorSessionFiles());
   if (sources.has('pi')) candidates.push(...discoverPiSessionFiles());
   if (sources.has('omp')) candidates.push(...discoverOmpSessionFiles());
+  if (sources.has('devin')) candidates.push(...discoverDevinSessionFiles());
+  if (sources.has('perplexity')) candidates.push(...discoverPerplexitySessionFiles());
   candidates.sort((a, b) => b.modifiedTime.getTime() - a.modifiedTime.getTime());
 
   const matches: GrepMatchGroup[] = [];
@@ -334,6 +348,10 @@ export function grep(opts: GrepOptions): GrepResult {
         ? parseCursorSessionFile(f.path)
         : f.sourceType === 'pi' || f.sourceType === 'omp'
         ? parsePiSessionFile(f.path, f.sourceType)
+        : f.sourceType === 'devin'
+        ? parseDevinSessionFile(f.path, f.sessionId)
+        : f.sourceType === 'perplexity'
+        ? parsePerplexitySessionFile(f.path, f.sessionId)
         : parseSessionFile(f.path);
     if (conv.messages.length === 0) continue;
     if (!includeSdkCli && conv.entrypoint === 'sdk-cli') continue;

@@ -11,6 +11,7 @@
 import { openSync, readSync, closeSync } from 'fs';
 import { createOpenAI } from '@ai-sdk/openai';
 import { streamText } from 'ai';
+import { resolveLlmParams } from './llm.js';
 
 import { discoverSessionFiles, parseSessionFile, type Message } from './session-parser.js';
 import {
@@ -30,6 +31,14 @@ import {
   discoverOmpSessionFiles,
   parsePiSessionFile,
 } from './pi-session-parser.js';
+import {
+  discoverDevinSessionFiles,
+  parseDevinSessionFile,
+} from './devin-session-parser.js';
+import {
+  discoverPerplexitySessionFiles,
+  parsePerplexitySessionFile,
+} from './perplexity-session-parser.js';
 import { isGitRepo, getCommitsSince, type GitCommitSummary } from './source-parsers.js';
 import { type StatusLine } from './status-line.js';
 
@@ -230,6 +239,8 @@ export async function standup(opts: StandupOptions): Promise<StandupResult> {
   const cursorFiles = discoverCursorSessionFiles();
   const piFiles = discoverPiSessionFiles();
   const ompFiles = discoverOmpSessionFiles();
+  const devinFiles = discoverDevinSessionFiles();
+  const perplexityFiles = discoverPerplexitySessionFiles();
   // No per-source cap here: standup is already time-windowed by mtime, so
   // Claude Code can't structurally crowd the others out the way snap's
   // flat candidate slice did. Sort by mtime, drop everything below the cutoff
@@ -241,12 +252,14 @@ export async function standup(opts: StandupOptions): Promise<StandupResult> {
     ...cursorFiles,
     ...piFiles,
     ...ompFiles,
+    ...devinFiles,
+    ...perplexityFiles,
   ].sort((a, b) => b.modifiedTime.getTime() - a.modifiedTime.getTime());
 
   type Kept = {
     cwd: string;
     sessionId: string;
-    sourceType: 'claude-code' | 'codex' | 'opencode' | 'cursor' | 'pi' | 'omp';
+    sourceType: 'claude-code' | 'codex' | 'opencode' | 'cursor' | 'pi' | 'omp' | 'devin' | 'perplexity';
     messages: Message[];
     lastMessageTime: Date;
   };
@@ -268,6 +281,10 @@ export async function standup(opts: StandupOptions): Promise<StandupResult> {
         ? parseCursorSessionFile(f.path)
         : f.sourceType === 'pi' || f.sourceType === 'omp'
         ? parsePiSessionFile(f.path, f.sourceType)
+        : f.sourceType === 'devin'
+        ? parseDevinSessionFile(f.path, f.sessionId)
+        : f.sourceType === 'perplexity'
+        ? parsePerplexitySessionFile(f.path, f.sessionId)
         : parseSessionFile(f.path);
     if (conv.messages.length === 0) continue;
     if (!includeSdkCli && conv.entrypoint === 'sdk-cli') continue;
@@ -285,7 +302,11 @@ export async function standup(opts: StandupOptions): Promise<StandupResult> {
     // JSONL probe doesn't apply.
     const cwd =
       f.cwd ??
-      (f.sourceType === 'opencode' ? '/' : readSessionCwd(f.path, f.project));
+      (f.sourceType === 'opencode' || f.sourceType === 'devin'
+        ? '/'
+        : f.sourceType === 'perplexity'
+        ? 'perplexity'
+        : readSessionCwd(f.path, f.project));
     kept.push({
       cwd,
       sessionId: conv.sessionId,
@@ -300,6 +321,10 @@ export async function standup(opts: StandupOptions): Promise<StandupResult> {
           ? 'pi'
           : f.sourceType === 'omp'
           ? 'omp'
+          : f.sourceType === 'devin'
+          ? 'devin'
+          : f.sourceType === 'perplexity'
+          ? 'perplexity'
           : 'claude-code',
       messages: tail,
       lastMessageTime: last.timestamp,
@@ -393,12 +418,13 @@ export async function standup(opts: StandupOptions): Promise<StandupResult> {
 
   const promptBody = lines.join('\n');
 
+  const llm = resolveLlmParams(opts);
   const client = createOpenAI({
-    apiKey: opts.apiKey,
-    baseURL: opts.baseUrl || 'https://openrouter.ai/api/v1',
+    apiKey: llm.apiKey,
+    baseURL: llm.baseUrl,
     headers: { 'X-Title': 'prose' },
   });
-  const modelId = opts.model || 'google/gemini-3-flash-preview';
+  const modelId = llm.model;
   const model = client(modelId);
 
   status.show(

@@ -29,6 +29,7 @@ import {
 } from './schemas.js';
 import { getJinaEmbeddings } from './jina.js';
 import { loadProjectVectors, saveProjectVectors, calculateFragmentHash } from './memory.js';
+import { resolveLlmParams } from './llm.js';
 
 // ============================================================================
 // Types
@@ -66,9 +67,10 @@ export interface EvolutionConfig {
 // ============================================================================
 
 function createLLMClient(config: EvolutionConfig) {
+  const llm = resolveLlmParams(config);
   return createOpenAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseUrl || 'https://openrouter.ai/api/v1',
+    apiKey: llm.apiKey,
+    baseURL: llm.baseUrl,
     headers: { 'X-Title': 'prose' },
   });
 }
@@ -128,7 +130,7 @@ ${formatMessages(context.messages)}
 Evolve the decisions based on the new messages. The schema describes what we need.`;
 
     const { object, usage } = await generateObject({
-      model: client(config.model || 'google/gemini-3-flash-preview'),
+      model: client(resolveLlmParams(config).model),
       schema: DecisionSchema,
       prompt: systemPrompt,
       temperature: config.temperature ?? 0.3,
@@ -177,7 +179,7 @@ ${formatMessages(context.messages)}
 Evolve the insights based on the new messages. The schema describes what we need.`;
 
     const { object, usage } = await generateObject({
-      model: client(config.model || 'google/gemini-3-flash-preview'),
+      model: client(resolveLlmParams(config).model),
       schema: InsightSchema,
       prompt: systemPrompt,
       temperature: config.temperature ?? 0.3,
@@ -227,7 +229,7 @@ This fragment is EPHEMERAL - it reflects the current state, not history.
 Update completely based on what the conversation shows as the current focus.`;
 
     const { object, usage } = await generateObject({
-      model: client(config.model || 'google/gemini-3-flash-preview'),
+      model: client(resolveLlmParams(config).model),
       schema: FocusSchema,
       prompt: systemPrompt,
       temperature: config.temperature ?? 0.3,
@@ -279,7 +281,7 @@ Think like a documentarian - what would make this session interesting to read ab
 Be selective - only capture truly notable moments and quotes.`;
 
     const { object, usage } = await generateObject({
-      model: client(config.model || 'google/gemini-3-flash-preview'),
+      model: client(resolveLlmParams(config).model),
       schema: NarrativeSchema,
       prompt: systemPrompt,
       temperature: config.temperature ?? 0.5, // Slightly higher for creative narrative
